@@ -3,21 +3,42 @@
 
 build:
   # set to true if your model requires a GPU
-  gpu: true
+  gpu: false
 
   # a list of ubuntu apt packages to install
-  # system_packages:
-  #   - "libgl1-mesa-glx"
-  #   - "libglib2.0-0"
+  system_packages:
+    - ffmpeg
+    - libavformat-dev
+    - libavcodec-dev
+    - libavdevice-dev
+    - libavutil-dev
 
   # python version in the form '3.11' or '3.11.4'
   python_version: "3.11"
 
   # a list of packages in the format <package-name>==<version>
-  # python_packages:
-  #   - "numpy==1.19.4"
-  #   - "torch==1.8.0"
-  #   - "torchvision==0.9.0"
+  python_packages:
+    - "av==14.1.0"
+    - "einops"
+    - "omegaconf"
+    - "cloudpickle"
+    - "accelerate"
+    - "pycocotools"
+    - "fvcore"
+    - "diffusers"
+    - "safetensors"
+    - "onnxruntime"
+    - "onnx"
+    - "onnxconverter-common"
+    - "torch"
+    - "torchvision"
+    - "numpy"
+    - "scikit-learn"
+    - "scikit-image"
+    - "transformers"
+    - "tqdm"
+    - "triton"
+    - "opencv-python"
 
   # commands run after the environment is setup
   # run:

@@ -1,0 +1,5 @@
+checkpoints/
+.venv/
+venv/
+.cog/
+.DS_Store
