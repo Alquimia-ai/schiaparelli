@@ -3,3 +3,4 @@ checkpoints/
 venv/
 .cog/
 .DS_Store
+__pycache__/

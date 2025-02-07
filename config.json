@@ -26,5 +26,12 @@
   "human_parsing": {
     "atr_path": "checkpoints/humanparsing/parsing_atr.onnx",
     "lip_path": "checkpoints/humanparsing/parsing_lip.onnx"
+  },
+  "openpose": {
+    "body_model_path": "checkpoints/openpose/body_pose_model.pth"
+  },
+  "densepose": {
+    "config_path": "checkpoints/densepose/densepose_rcnn_R_50_FPN_s1x.yaml",
+    "weights_path": "checkpoints/densepose/model_final_162be9.pkl"
   }
 }
