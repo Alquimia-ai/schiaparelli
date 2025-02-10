@@ -610,7 +610,6 @@ class SchiaparelliModel(torch.nn.Module):
             pretrained_model,
             new_in_channels,
         )
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         if dtype == "float16":
             self.half()
@@ -679,6 +678,7 @@ class SchiaparelliModel(torch.nn.Module):
         new_in_channels: int = 12,
     ):
         diffusion_model_type = "sd15"
+        device = "cuda" if torch.cuda.is_available() else "cpu"
 
         logging.debug(f"[INSTANTIATE]:  Using {pretrained_model_name_or_path}")
 
@@ -698,7 +698,7 @@ class SchiaparelliModel(torch.nn.Module):
             return_unused_kwargs=True,
         )
         self.vae = AutoencoderKL.from_config(vae_config, **vae_kwargs).to(  # type: ignore
-            self.device,
+            device=device,
             dtype=torch.float16,  # type: ignore
         )
         self.vae_scale_factor = 2 ** (len(self.vae.config.block_out_channels) - 1)  # type: ignore
@@ -715,7 +715,7 @@ class SchiaparelliModel(torch.nn.Module):
             return_unused_kwargs=True,
         )
         self.unet_encoder = ReferenceUNet.from_config(unet_config, **unet_kwargs).to(
-            self.device, dtype=torch.float16
+            device=device, dtype=torch.float16
         )
         self.unet_encoder.config.addition_embed_type = None
 
@@ -728,7 +728,7 @@ class SchiaparelliModel(torch.nn.Module):
         )
 
         self.unet = GenerativeUNet.from_config(unet_config, **unet_kwargs).to(
-            self.device, dtype=torch.float16
+            device, dtype=torch.float16
         )
         self.unet.config.addition_embed_type = None
 
@@ -747,7 +747,7 @@ class SchiaparelliModel(torch.nn.Module):
         if unet_conv_in_channel_changed:
             self.unet.conv_in = self.replace_conv_in_layer(
                 self.unet, new_in_channels
-            ).to(self.device, dtype=torch.float16)
+            ).to(device, dtype=torch.float16)
             self.unet.config.in_channels = new_in_channels
         unet_conv_out_channel_changed = (
             self.unet.config.out_channels != self.vae.config.latent_channels  # type: ignore
@@ -797,11 +797,11 @@ class SchiaparelliModel(torch.nn.Module):
         # Load pretrained model
         if pretrained_model and pretrained_model != "":
             # Load the checkpoint, mapping tensors directly to GPU
-            checkpoint = torch.load(pretrained_model, map_location=self.device)
+            checkpoint = torch.load(pretrained_model, map_location=device)
 
             # Load state dict into your model
             self.load_state_dict(checkpoint)
 
-            self.to(self.device)
+            self.to(device)
 
             logging.debug(f"Loaded pretrained model from {pretrained_model}")
