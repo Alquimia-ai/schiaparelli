@@ -390,6 +390,7 @@ def rescale_noise_cfg(noise_cfg, noise_pred_text, guidance_rescale=0.0):
 
 
 def agnostic_mask(
+    src_image,
     model_parse,
     keypoint,
     category,
@@ -399,12 +400,17 @@ def agnostic_mask(
     stroke_width_mask: int = 30,
     size=(384, 512),
 ):
+
     parse_array = np.array(model_parse)
     pose_data = keypoint["pose_keypoints_2d"]
     pose_data = np.array(pose_data)
     pose_data = pose_data.reshape((-1, 2))
+
     parse_head = mask_head(parse_array)
+
+    ## Initially only the background is a changeable mask
     parser_mask_fixed = mask_fixed(parse_array)
+
     ## Initially only the background is a changeable mask
     parser_mask_changeable = (parse_array == MASK_LABEL_MAP["background"]).astype(
         np.float32
@@ -412,6 +418,7 @@ def agnostic_mask(
 
     arms = mask_arms(parse_array)
     parse_mask = np.zeros_like(parse_array)
+
     ## For each subcategory we append new changeables masks
     if category == "dresses":
         parse_mask, parser_mask_changeable = mask_dress(
@@ -434,16 +441,13 @@ def agnostic_mask(
     parse_mask = torch.from_numpy(parse_mask)
     parser_mask_fixed = torch.from_numpy(parser_mask_fixed)
     parser_mask_changeable = torch.from_numpy(parser_mask_changeable)
-
     width, height = size
-
     im_arms = Image.new("L", (width, height))
     arms_draw = ImageDraw.Draw(im_arms)
 
     # dilation
     parse_mask = parse_mask.cpu().numpy()
 
-    width, height = size
     shoulder_right = tuple(pose_data[2, :2])
     elbow_right = tuple(pose_data[3, :2])
     wrist_right = tuple(pose_data[4, :2])
@@ -451,68 +455,79 @@ def agnostic_mask(
     elbow_left = tuple(pose_data[6, :2])
     wrist_left = tuple(pose_data[7, :2])
     keypoints = []
+    keypoints_label = []
 
     if category == "dresses" or category == "upper_body":
         # Define a stroke along the arms that helps separate them from the clothing in the segmentation mask.
         # The stroke helps define where the arms are, ensuring they are not erased along with the clothing.
-        if is_articulation_detected(wrist_right) is False:
-            if is_articulation_detected(elbow_right) is False:
-                arms_draw.line(
-                    [wrist_left, elbow_left, shoulder_left, shoulder_right],
-                    "white",
-                    stroke_width_mask,
-                    "curve",
-                )
+        if not is_articulation_detected(wrist_right):
+            if not is_articulation_detected(elbow_right):
+                keypoints = [wrist_left, elbow_left, shoulder_left, shoulder_right]
+                keypoints_label = [
+                    "wrist_left",
+                    "elbow_left",
+                    "shoulder_left",
+                    "shoulder_right",
+                ]
             else:
-                arms_draw.line(
-                    [
-                        wrist_left,
-                        elbow_left,
-                        shoulder_left,
-                        shoulder_right,
-                        elbow_right,
-                    ],
-                    "white",
-                    stroke_width_mask,
-                    "curve",
-                )
-        elif is_articulation_detected(wrist_left) is False:
-            if is_articulation_detected(elbow_left) is False:
-                arms_draw.line(
-                    [shoulder_left, shoulder_right, elbow_right, wrist_right],
-                    "white",
-                    stroke_width_mask,
-                    "curve",
-                )
-            else:
-                arms_draw.line(
-                    [
-                        elbow_left,
-                        shoulder_left,
-                        shoulder_right,
-                        elbow_right,
-                        wrist_right,
-                    ],
-                    "white",
-                    stroke_width_mask,
-                    "curve",
-                )
-        else:
-            arms_draw.line(
-                [
+                keypoints = [
                     wrist_left,
                     elbow_left,
                     shoulder_left,
                     shoulder_right,
                     elbow_right,
+                ]
+                keypoints_label = [
+                    "wrist_left",
+                    "elbow_left",
+                    "shoulder_left",
+                    "shoulder_right",
+                    "elbow_right",
+                ]
+        elif not is_articulation_detected(wrist_left):
+            if not is_articulation_detected(elbow_left):
+                keypoints = [shoulder_left, shoulder_right, elbow_right, wrist_right]
+                keypoints_label = [
+                    "shoulder_left",
+                    "shoulder_right",
+                    "elbow_right",
+                    "wrist_right",
+                ]
+            else:
+                keypoints = [
+                    elbow_left,
+                    shoulder_left,
+                    shoulder_right,
+                    elbow_right,
                     wrist_right,
-                ],
-                "white",
-                stroke_width_mask,
-                "curve",
-            )
+                ]
+                keypoints_label = [
+                    "elbow_left",
+                    "shoulder_left",
+                    "shoulder_right",
+                    "elbow_right",
+                    "wrist_right",
+                ]
+        else:
+            keypoints = [
+                wrist_left,
+                elbow_left,
+                shoulder_left,
+                shoulder_right,
+                elbow_right,
+                wrist_right,
+            ]
+            keypoints_label = [
+                "wrist_left",
+                "elbow_left",
+                "shoulder_left",
+                "shoulder_right",
+                "elbow_right",
+                "wrist_right",
+            ]
 
-        # increases the thickness of the line so we ensure if they are around the arms is included in the garment
+        arms_draw.line(keypoints, "white", stroke_width_mask, "curve")
+
         if height > 512:
             im_arms = cv2.dilate(  # type: ignore
                 np.float32(im_arms),  # type: ignore
@@ -522,7 +537,7 @@ def agnostic_mask(
         elif height > 256:
             im_arms = cv2.dilate(  # type: ignore
                 np.float32(im_arms),  # type: ignore
-                np.ones(tuple([z * 2 for z in dilatation_kernel]), np.uint16),  # type: ignore
+                np.ones(tuple([int(z / 2) for z in dilatation_kernel]), np.uint16),
                 iterations=dilatation_iterations,
             )
 
@@ -591,17 +606,31 @@ def agnostic_mask(
     keypoints_img = Image.new("RGB", (width, height), (0, 0, 0))
     keypoints_draw = ImageDraw.Draw(keypoints_img)
 
-    for point in keypoints:
-        ## Create an elipse around the keypoints
-        ## point[0] = x, point[1] = y
-        ## equation of an ellipse = (x-h)^2/a^2 + (y-k)^2/b^2 = 1 where (h,k) is the center of the ellipse
+    # Iterate over keypoints and their labels simultaneously
+    for point, label in zip(keypoints, keypoints_label):
+        # Draw an ellipse around the keypoint
         keypoints_draw.ellipse(
             [(point[0] - 5, point[1] - 5), (point[0] + 5, point[1] + 5)], fill="blue"
         )
 
-    keypoints_draw.line(keypoints, fill="red", width=2)
+        # Draw the label above the ellipse
+        text_position = (
+            point[0] - 10,
+            point[1] - 15,
+        )  # Adjusting to position text above the ellipse
+        keypoints_draw.text(text_position, label, fill="white")
 
-    return mask, keypoints_img
+    # Draw a line connecting the keypoints
+    keypoints_draw.line(keypoints, fill="red", width=2)
+    masked_array = np.array(mask.resize(RESIZE_RES))
+    mask_binary = np.where(masked_array > 128, 255, 0).astype(np.uint8)
+    mask_rgb = np.stack([mask_binary] * 3, axis=-1)
+
+    overlay = Image.fromarray(
+        np.where(mask_rgb == 255, 255, src_image).astype(np.uint8)
+    )
+
+    return mask, overlay, keypoints_img
 
 
 class SchiaparelliModel(torch.nn.Module):

@@ -116,7 +116,8 @@ class Predictor(BasePredictor):
 
             yield output
         keypoints = self.open_pose(src_image.resize(self.parsing_res))
-        mask, kp = agnostic_mask(
+        mask, overlay_mask, kp = agnostic_mask(
+            np.array(src_image),
             model_parse,
             keypoints,
             garment_type,
@@ -126,9 +127,9 @@ class Predictor(BasePredictor):
             stroke_width_mask,
         )
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            mask.save(tmp.name)
-            mask_path = Path(tmp.name)
-            output.mask = mask_path
+            overlay_mask.save(tmp.name)
+            overlay_mask_path = Path(tmp.name)
+            output.mask = overlay_mask_path
             yield output
 
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
