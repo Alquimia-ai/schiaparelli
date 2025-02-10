@@ -403,17 +403,14 @@ def agnostic_mask(
     pose_data = keypoint["pose_keypoints_2d"]
     pose_data = np.array(pose_data)
     pose_data = pose_data.reshape((-1, 2))
-
     parse_head = mask_head(parse_array)
-
-    arms = mask_arms(parse_array)
-
     parser_mask_fixed = mask_fixed(parse_array)
-
     ## Initially only the background is a changeable mask
     parser_mask_changeable = (parse_array == MASK_LABEL_MAP["background"]).astype(
         np.float32
     )
+
+    arms = mask_arms(parse_array)
     parse_mask = np.zeros_like(parse_array)
     ## For each subcategory we append new changeables masks
     if category == "dresses":
@@ -454,68 +451,86 @@ def agnostic_mask(
     elbow_left = tuple(pose_data[6, :2])
     wrist_left = tuple(pose_data[7, :2])
     keypoints = []
+
     if category == "dresses" or category == "upper_body":
         # Define a stroke along the arms that helps separate them from the clothing in the segmentation mask.
         # The stroke helps define where the arms are, ensuring they are not erased along with the clothing.
         if is_articulation_detected(wrist_right) is False:
             if is_articulation_detected(elbow_right) is False:
-                keypoints = [wrist_left, elbow_left, shoulder_left, shoulder_right]
+                arms_draw.line(
+                    [wrist_left, elbow_left, shoulder_left, shoulder_right],
+                    "white",
+                    stroke_width_mask,
+                    "curve",
+                )
             else:
-                keypoints = [
+                arms_draw.line(
+                    [
+                        wrist_left,
+                        elbow_left,
+                        shoulder_left,
+                        shoulder_right,
+                        elbow_right,
+                    ],
+                    "white",
+                    stroke_width_mask,
+                    "curve",
+                )
+        elif is_articulation_detected(wrist_left) is False:
+            if is_articulation_detected(elbow_left) is False:
+                arms_draw.line(
+                    [shoulder_left, shoulder_right, elbow_right, wrist_right],
+                    "white",
+                    stroke_width_mask,
+                    "curve",
+                )
+            else:
+                arms_draw.line(
+                    [
+                        elbow_left,
+                        shoulder_left,
+                        shoulder_right,
+                        elbow_right,
+                        wrist_right,
+                    ],
+                    "white",
+                    stroke_width_mask,
+                    "curve",
+                )
+        else:
+            arms_draw.line(
+                [
                     wrist_left,
                     elbow_left,
                     shoulder_left,
                     shoulder_right,
                     elbow_right,
-                ]
-        elif is_articulation_detected(wrist_left) is False:
-            if is_articulation_detected(elbow_left) is False:
-                keypoints = [shoulder_left, shoulder_right, elbow_right, wrist_right]
-            else:
-                keypoints = [
-                    elbow_left,
-                    shoulder_left,
-                    shoulder_right,
-                    elbow_right,
                     wrist_right,
-                ]
-        else:
-            keypoints = [
-                wrist_left,
-                elbow_left,
-                shoulder_left,
-                shoulder_right,
-                elbow_right,
-                wrist_right,
-            ]
+                ],
+                "white",
+                stroke_width_mask,
+                "curve",
+            )
 
-    arms_draw.line(
-        keypoints,
-        "white",
-        stroke_width_mask,
-        "curve",
-    )
+        # increases the thickness of the line so we ensure if they are around the arms is included in the garment
+        if height > 512:
+            im_arms = cv2.dilate(  # type: ignore
+                np.float32(im_arms),  # type: ignore
+                np.ones(dilatation_kernel, np.uint16),
+                iterations=dilatation_iterations,
+            )
+        elif height > 256:
+            im_arms = cv2.dilate(  # type: ignore
+                np.float32(im_arms),  # type: ignore
+                np.ones(tuple([z * 2 for z in dilatation_kernel]), np.uint16),  # type: ignore
+                iterations=dilatation_iterations,
+            )
 
-    # increases the thickness of the line so we ensure if they are around the arms is included in the garment
-    if height > 512:
-        im_arms = cv2.dilate(  # type: ignore
-            np.float32(im_arms),  # type: ignore
-            np.ones(dilatation_kernel, np.uint16),
-            iterations=dilatation_iterations,
-        )
-    elif height > 256:
-        im_arms = cv2.dilate(  # type: ignore
-            np.float32(im_arms),  # type: ignore
-            np.ones(tuple([z * 2 for z in dilatation_kernel]), np.uint16),  # type: ignore
-            iterations=dilatation_iterations,
-        )
-
-    hands = np.logical_and(np.logical_not(im_arms), arms)  # type: ignore
-    parse_mask += im_arms
-    parser_mask_fixed += hands
+        hands = np.logical_and(np.logical_not(im_arms), arms)  # type: ignore
+        parse_mask += im_arms
+        parser_mask_fixed += hands
 
     parse_head_2 = torch.clone(parse_head)
-
     ## Neck Removal
     if category == "dresses" or category == "upper_body":
         points = []
@@ -542,7 +557,6 @@ def agnostic_mask(
             np.logical_not(np.array(parse_head_2, dtype=np.uint16)),
         ),
     )
-
     if height > 512:
         parse_mask = cv2.dilate(
             parse_mask,
@@ -573,6 +587,7 @@ def agnostic_mask(
     dst = refine_mask(dst)
     inpaint_mask = dst / 255 * 1
     mask = Image.fromarray(inpaint_mask.astype(np.uint8) * 255)
+
     keypoints_img = Image.new("RGB", (width, height), (0, 0, 0))
     keypoints_draw = ImageDraw.Draw(keypoints_img)
 
