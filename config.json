@@ -2,6 +2,7 @@
   "parsing_res": [384, 512],
   "resize_res": [768, 1024],
   "padding_img": 25,
+  "vae_scale_factor": 8,
   "mask_label_map": {
     "background": 0,
     "hat": 1,

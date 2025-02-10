@@ -2468,8 +2468,6 @@ class CrossAttnUpBlock2D(nn.Module):
                 )
 
             hidden_states = torch.cat([hidden_states, res_hidden_states], dim=1)
-            # print(hidden_states.shape)
-            # print(encoder_hidden_states.shape)
             if self.training and self.gradient_checkpointing:
 
                 def create_custom_forward(module, return_dict=None):

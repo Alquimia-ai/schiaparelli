@@ -5,9 +5,8 @@ from PIL import Image, ImageFilter, ImageDraw
 import json
 import torch
 import torch.nn.functional as F
-import diffusers
 from numpy.linalg import lstsq
-
+import logging
 from vton.unet_ref import (
     UNet2DConditionModel as ReferenceUNet,
 )
@@ -590,7 +589,7 @@ def agnostic_mask(
     return mask, keypoints_img
 
 
-class Schiaparelli(torch.nn.Module):
+class SchiaparelliModel(torch.nn.Module):
     def __init__(
         self,
         pretrained_model_name_or_path: str = "",
@@ -681,7 +680,7 @@ class Schiaparelli(torch.nn.Module):
     ):
         diffusion_model_type = "sd15"
 
-        print(f"[INSTANTIATE]:  Using {pretrained_model_name_or_path}")
+        logging.debug(f"[INSTANTIATE]:  Using {pretrained_model_name_or_path}")
 
         # Noise Scheduler (Gaussian Noise)
         self.noise_scheduler = DDPMScheduler.from_pretrained(
@@ -690,7 +689,7 @@ class Schiaparelli(torch.nn.Module):
             rescale_betas_zero_snr=False if diffusion_model_type == "sd15" else True,
         )
 
-        print("[INSTANTIATE]: Noise scheduler set")
+        logging.debug("[INSTANTIATE]: Noise scheduler set")
 
         # VAE (Variational AutoEncoder)
         vae_config, vae_kwargs = AutoencoderKL.load_config(
@@ -704,8 +703,8 @@ class Schiaparelli(torch.nn.Module):
         )
         self.vae_scale_factor = 2 ** (len(self.vae.config.block_out_channels) - 1)  # type: ignore
 
-        print("[INSTANTIATE]: VAE set")
-        print("[INSTANTIATE/VAE]: VAE scale factor {self.vae_scale_factor}")
+        logging.debug("[INSTANTIATE]: VAE set")
+        logging.debug("[INSTANTIATE/VAE]: VAE scale factor {self.vae_scale_factor}")
 
         ## Reference UNET
         ## Gets key references of the Garment
@@ -720,7 +719,7 @@ class Schiaparelli(torch.nn.Module):
         )
         self.unet_encoder.config.addition_embed_type = None
 
-        print("[INSTANTIATE]: Reference UNET set")
+        logging.debug("[INSTANTIATE]: Reference UNET set")
 
         ## Generative UNET (Denoiser Diffusion)
 
@@ -733,12 +732,12 @@ class Schiaparelli(torch.nn.Module):
         )
         self.unet.config.addition_embed_type = None
 
-        print("[INSTANTIATE]: Generative UNET set")
+        logging.debug("[INSTANTIATE]: Generative UNET set")
 
         ## We are receiving a channel of 12, stablediffusion standard generative UNET uses 4 channels
         ## We have to adapt the conv_in and conv_out layers
 
-        print(
+        logging.debug(
             "[INSTANTIATE/UNET] Changing conv_in & conv_out layers to match the 12 channels"
         )
 
@@ -775,7 +774,8 @@ class Schiaparelli(torch.nn.Module):
             )
 
         unet_encoder_conv_out_channel_changed = (
-            self.unet_encoder.config.out_channels != self.vae.config.latent_channels  # type:ignore
+            self.unet_encoder.config.out_channels
+            != self.vae.config.latent_channels  # type:ignore
         )
 
         if unet_encoder_conv_out_channel_changed:
@@ -790,7 +790,9 @@ class Schiaparelli(torch.nn.Module):
         remove_cross_attention(self.unet)
         remove_cross_attention(self.unet_encoder, model_type="unet_encoder")
 
-        print("[INSTANTIATE/UNET] Conv_in and conv_out layers succesfully  changed!")
+        logging.debug(
+            "[INSTANTIATE/UNET] Conv_in and conv_out layers succesfully  changed!"
+        )
 
         # Load pretrained model
         if pretrained_model and pretrained_model != "":
@@ -802,4 +804,4 @@ class Schiaparelli(torch.nn.Module):
 
             self.to(self.device)
 
-            print(f"Loaded pretrained model from {pretrained_model}")
+            logging.debug(f"Loaded pretrained model from {pretrained_model}")

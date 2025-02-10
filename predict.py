@@ -8,8 +8,10 @@ from preprocessing.openpose.run_openpose import OpenPose
 from PIL import Image
 import tempfile
 from typing import Iterator, Optional
-from helpers import resize_and_center, agnostic_mask
+from helpers import resize_and_center, agnostic_mask, SchiaparelliModel
 import numpy as np
+from vton.inference import Inference
+from vton.transform import Transform
 
 
 class Schiaparelli(BaseModel):
@@ -17,6 +19,7 @@ class Schiaparelli(BaseModel):
     open_pose: Optional[Path] = None
     dense_pose: Optional[Path] = None
     mask: Optional[Path] = None
+    vton: Optional[Path] = None
 
 
 class Predictor(BasePredictor):
@@ -38,6 +41,13 @@ class Predictor(BasePredictor):
         self.dense_pose = DensePosePredictor(
             config_path=self.config["densepose"]["config_path"],
             weights_path=self.config["densepose"]["weights_path"],
+        )
+        ## Virtual TryOn Model
+        self.VTONTransform = Transform()
+        self.VTON = SchiaparelliModel(
+            pretrained_model_name_or_path="./checkpoints/stable-diffusion-inpainting",
+            pretrained_model="./checkpoints/virtual_tryon_dc.pth",
+            dtype="float16",
         )
 
     def predict(  # type: ignore
@@ -103,6 +113,7 @@ class Predictor(BasePredictor):
             model_parse.save(tmp.name)
             human_parsing_path = Path(tmp.name)
             output.human_parsing = human_parsing_path
+
             yield output
         keypoints = self.open_pose(src_image.resize(self.parsing_res))
         mask, kp = agnostic_mask(
@@ -112,6 +123,7 @@ class Predictor(BasePredictor):
             neck_offset_removal,
             tuple(dilatation_kernel),
             dilatation_iterations,
+            stroke_width_mask,
         )
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             mask.save(tmp.name)
@@ -140,6 +152,30 @@ class Predictor(BasePredictor):
             densepose_path = Path(tmp.name)
             output.dense_pose = densepose_path
             yield output
-        # processed_input = preprocess(image)
-        # output = self.model(processed_image, scale)
-        # return postprocess(output)
+
+        ### Prepare Inputs model
+        inputs = {
+            "src_image": [src_image],
+            "ref_image": [rf_image],
+            "mask": [mask],
+            "densepose": [densepose],
+        }
+
+        ## Perform Virtual TryOn
+        data = self.VTONTransform(inputs)
+        inference = Inference(model=self.VTON)
+        vton_output = inference(
+            data,
+            ref_acceleration=reference_unet_acceleration,
+            num_inference_steps=denoising_steps,
+            guidance_scale=guidance_scale,
+            seed=seed,
+            repaint=repaint,
+        )
+        vton = vton_output["generated_image"][0]
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            vton.save(tmp.name)
+            vton_path = Path(tmp.name)
+            output.vton = vton_path
+            yield output
